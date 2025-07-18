@@ -1,50 +1,65 @@
-import { type Message } from "ai"
+import { anthropic } from "@ai-sdk/anthropic"
+import { openai } from "@ai-sdk/openai"
+import { streamText, convertToModelMessages, type UIMessage } from "ai"
 
+// Allow streaming responses up to 30 seconds
 export const maxDuration = 30
 
+/**
+ * POST handler for chat API endpoint
+ * Handles both text and multimodal (PDF/image) conversations
+ */
 export async function POST(req: Request) {
   try {
-    const { messages }: { messages: Message[] } = await req.json()
+    // Extract messages from the request body
+    const { messages }: { messages: UIMessage[] } = await req.json()
 
-    const lastMessage = messages[messages.length - 1]?.content
-    const sessionId = "1234" // In production, generate this per user/session
+    // Check if any message contains PDF attachments
+    // PDFs require special handling with Claude model
+    const messagesHavePDF = messages.some((message) =>
+      message.experimental_attachments?.some((attachment) => attachment.contentType === "application/pdf"),
+    )
 
-    if (!lastMessage) {
-      return new Response(
-        JSON.stringify({ error: "No message content found" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      )
+    // Check if any message contains image attachments
+    const messagesHaveImages = messages.some((message) =>
+      message.experimental_attachments?.some((attachment) => attachment.contentType?.startsWith("image/")),
+    )
+
+    // Select the appropriate model based on attachment types
+    let selectedModel
+
+    if (messagesHavePDF) {
+      // Use Claude for PDF processing (supports both images and PDFs)
+      selectedModel = anthropic("claude-3-5-sonnet-latest")
+      console.log("Using Claude model for PDF processing")
+    } else if (messagesHaveImages) {
+      // Use GPT-4o for image processing (good image understanding)
+      selectedModel = openai("gpt-4o")
+      console.log("Using GPT-4o model for image processing")
+    } else {
+      // Use GPT-4o for text-only conversations (fast and capable)
+      selectedModel = openai("gpt-4o")
+      console.log("Using GPT-4o model for text conversation")
     }
 
-    const flaskPayload = {
-      session_id: sessionId,
-      message: lastMessage,
-    }
+    // Stream the response using the selected model
+    const result = streamText({
+      model: selectedModel,
+      messages: convertToModelMessages(messages),
 
-    const flaskResponse = await fetch("http://127.0.0.1:5000/ask", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(flaskPayload),
+      // Optional: Add system message for better responses
+      system: `You are a helpful AI assistant that can analyze text, images, and PDF documents. 
+               When analyzing PDFs, provide detailed insights about the content, structure, and key information.
+               When analyzing images, describe what you see and answer any questions about the visual content.
+               Always be thorough and helpful in your responses.`,
     })
 
-    if (!flaskResponse.ok) {
-      const errorText = await flaskResponse.text()
-      throw new Error(`Flask API error: ${flaskResponse.status} - ${errorText}`)
-    }
-
-    const data = await flaskResponse.json()
-
-    // Respond with plain text so your frontend chat can render it
-    return new Response(data.response, {
-      headers: {
-        "Content-Type": "text/plain",
-      },
-    })
+    // Return the streaming response
+    return result.toDataStreamResponse()
   } catch (error) {
-    console.error("Chat error:", error)
+    console.error("API Error:", error)
 
+    // Return error response
     return new Response(
       JSON.stringify({
         error: "Failed to process request",
@@ -53,7 +68,7 @@ export async function POST(req: Request) {
       {
         status: 500,
         headers: { "Content-Type": "application/json" },
-      }
+      },
     )
   }
 }

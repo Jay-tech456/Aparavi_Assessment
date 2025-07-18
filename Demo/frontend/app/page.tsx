@@ -25,7 +25,7 @@ export default function MultimodalChatbot() {
 
     // Call the hook's submit handler with attachments
     handleSubmit(event, {
-      attachments: files,
+      experimental_attachments: files,
     })
 
     // Reset file state after submission
@@ -96,9 +96,9 @@ export default function MultimodalChatbot() {
                         <div className="whitespace-pre-wrap">{message.content}</div>
 
                         {/* Attachments Display */}
-                        {message.attachments && message.attachments.length > 0 && (
+                        {message.experimental_attachments && message.experimental_attachments.length > 0 && (
                           <div className="mt-2 space-y-2">
-                            {message.attachments
+                            {message.experimental_attachments
                               .filter(
                                 (attachment) =>
                                   attachment?.contentType?.startsWith("image/") ||
