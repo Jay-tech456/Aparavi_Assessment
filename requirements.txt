@@ -1,0 +1,6 @@
+pymupdf
+pillow 
+pytesseract
+tesseract
+langchain 
+langchain-community
